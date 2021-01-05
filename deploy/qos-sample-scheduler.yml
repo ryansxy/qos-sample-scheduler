@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduler-config3
+  namespace: kube-system
+data:
+  scheduler-config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1alpha1
+    kind: KubeSchedulerConfiguration
+    schedulerName: qos-scheduler
+    leaderElection:
+      leaderElect: true
+      lockObjectName: qos-scheduler
+      lockObjectNamespace: kube-system
+    plugins:
+      queueSort:
+        enabled:
+          - name: "QOSSort"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qos-scheduler
+  namespace: kube-system
+  labels:
+    component: qos-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: qos-scheduler
+  template:
+    metadata:
+      labels:
+        component: qos-scheduler
+    spec:
+      imagePullSecrets:
+      - name: hybrid-regsecret
+      serviceAccount: qos-sa
+      priorityClassName: system-cluster-critical
+      volumes:
+        - name: scheduler-config3
+          configMap:
+            name: scheduler-config3
+      containers:
+        - name: qos-scheduler
+          image: hub.baidubce.com/kun/sxy/qos-scheduler:v1.0.0
+          imagePullPolicy: Always
+          args:
+            - /qos-sample-scheduler
+            - --config=/scheduler/scheduler-config.yaml
+            - --v=3
+          resources:
+            requests:
+              cpu: "50m"
+          volumeMounts:
+            - name: scheduler-config3
+              mountPath: /scheduler
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: qos-cr
+rules:
+  - apiGroups:
+      - '*'
+    resources:
+      - '*'
+    verbs:
+      - '*'
+  - nonResourceURLs:
+      - '*'
+    verbs:
+      - '*'
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qos-sa
+  namespace: kube-system
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: qos-crb
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: qos-cr
+subjects:
+  - kind: ServiceAccount
+    name: qos-sa
+    namespace: kube-system
